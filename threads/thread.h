@@ -96,8 +96,8 @@ struct thread
     int64_t sleep_endtick;              /* tick después que cada thread si estaba dormido */
 
     /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
     /*Guardados en la ready_list queue*/
+    struct list_elem elem;              
 
     /* Prioridad para las donaciones */
     struct lock *waiting_lock;          /* El lock object donde el thread está esperando, y NULL si no está locked */
