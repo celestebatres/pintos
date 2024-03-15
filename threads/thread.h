@@ -5,7 +5,6 @@
 #include <list.h>
 #include <stdint.h>
 
-
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -91,21 +90,16 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
-    int prioridad_original;              /* Prioridad antes de la donacion */
-    struct list_elem espera_lista;       /* Lista de elementos guardados en lista_espera, queue */
-    int64_t sleep_endtick;              /* tick después que cada thread si estaba dormido */
-
     /* Shared between thread.c and synch.c. */
-    /*Guardados en la ready_list queue*/
-    struct list_elem elem;              
-
-    /* Prioridad para las donaciones */
-    struct lock *waiting_lock;          /* El lock object donde el thread está esperando, y NULL si no está locked */
-    struct list locks;                      /* Lista de locks donde el thread se mantiene para distintas donaciones*/
+    struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */ 
+    /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct process_control_block *pcb;
+    struct list datos_pros;
+    struct file *exec_file;           //El archivo exec_file de asociado
+    struct list file_d_list;
 #endif
 
     /* Owned by thread.c. */
@@ -120,7 +114,7 @@ extern bool thread_mlfqs;
 void thread_init (void);
 void thread_start (void);
 
-void thread_tick (int64_t tick);
+void thread_tick (void);
 void thread_print_stats (void);
 
 typedef void thread_func (void *aux);
@@ -128,8 +122,6 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
-
-void dormir_thread_T (int64_t wake_tick);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
@@ -144,7 +136,6 @@ void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
-void thread_priority_donate(struct thread *, int priority);
 
 int thread_get_nice (void);
 void thread_set_nice (int);
