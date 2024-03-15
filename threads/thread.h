@@ -98,7 +98,7 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
     struct process_control_block *pcb;
     struct list datos_pros;
-    struct file *exec_file;           //El archivo exec_file de asociado
+    struct file *exec_file;
     struct list file_d_list;
 #endif
 
