@@ -604,6 +604,12 @@ init_thread (struct thread *t, const char *name, int priority)
   t->waiting_lock = NULL;
   list_init (&t->locks);
   t->sleep_endtick = 0;
+  #ifdef USERPROG
+    list_init(&t->file_d_list);
+    list_init(&t->datos_pros);
+    t->pcb = NULL;
+    t->exec_file = NULL;
+  #endif
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
