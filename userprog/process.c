@@ -64,7 +64,7 @@ process_execute (const char *file_name)
 
   sema_init(&pcb->inicio,0);
   sema_init(&pcb->tiempo_padre,0);
-
+  /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (name, PRI_DEFAULT, start_process, pcb);
   if (tid == TID_ERROR){
     goto error;
@@ -129,7 +129,9 @@ start_process (void *file_name_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
-
+  if(success) {
+    argu(tokens, cntArg, &if_.esp);
+  }
 finalizar:
   pcb->pid = success ? (tid_t)(thread_actual->tid) : -1;
   thread_actual->pcb = pcb;
@@ -160,9 +162,9 @@ finalizar:
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED)
+process_wait (tid_t child_tid)
 {
-  truct thread *thread_actual = thread_current();
+  struct thread *thread_actual = thread_current();
   struct list *datos_pros = &(thread_actual->datos_pros);
 
   struct process_control_block *child_pcb = NULL;
@@ -187,13 +189,13 @@ process_wait (tid_t child_tid UNUSED)
   } else {
     child_pcb->parent_wait = true;
   }
-  /
+
   if(!child_pcb->curr_finish){
     sema_down(&(child_pcb->tiempo_padre));
   }
   ASSERT(child_pcb->curr_finish == true);
   ASSERT(e != NULL);
-  
+
   list_remove(e);
   int status = child_pcb->exit_code;
   palloc_free_page(child_pcb);
@@ -215,7 +217,28 @@ process_exit (void)
     file_close(file_d->file);
     palloc_free_page(file_d);
   }
-  
+
+  struct list *datos_pros = &cur->datos_pros;
+  while (!list_empty(datos_pros)) {
+    struct list_elem *e = list_pop_front (datos_pros);
+    struct process_control_block *pcb = list_entry(e, struct process_control_block, elem);
+    if(pcb->curr_finish == true){
+      palloc_free_page(pcb);
+    } else {
+      pcb->libera_hijo = true;
+    }
+  }
+
+  if(cur->exec_file){
+    file_allow_write(cur->exec_file);
+    file_close(cur->exec_file);
+  }
+
+  sema_up(&cur->pcb->tiempo_padre);
+  if(cur->pcb->libera_hijo){
+    palloc_free_page(&cur->pcb);
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -581,3 +604,37 @@ install_page (void *upage, void *kpage, bool writable)
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
+
+static void argu(const char *tokens[], int cntArg, void** esp){
+
+
+  ASSERT(cntArg >= 0);
+
+  int i = 0;
+  int t = 0;
+  void* argu_dir[cntArg];
+  for(i = 0; i < cntArg; i++){
+    t = strlen(tokens[i])+1;
+    *esp -= t;
+    memcpy(*esp, tokens[i], t);
+    argu_dir[i] = *esp;
+  }
+  *esp = (void*)((unsigned int)(*esp) & 0xfffffffc);
+
+  *esp -= 4;
+  *((uint32_t*) *esp) = 0;
+  for (i = cntArg - 1; i >= 0; i--) {
+    *esp -= 4;
+    *((void**) *esp) = argu_dir[i];
+  }
+
+  *esp -= 4;
+  *((void**) *esp) = (*esp + 4);
+
+  *esp -= 4;
+  *((int*) *esp) = cntArg;
+
+  *esp-=4;
+  *((int*) *esp) = 0;
+
+};
