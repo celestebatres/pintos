@@ -95,6 +95,8 @@ error:
   return TID_ERROR;
 }
 
+/* A thread function that loads a user process and starts it
+   running. */
 static void
 start_process (void *file_name_)
 {
@@ -128,10 +130,6 @@ start_process (void *file_name_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
-  if(success) {
-    argu(tokens, cntArg, &if_.esp);
-  }
-
 finalizar:
   pcb->pid = success ? (tid_t)(thread_actual->tid) : -1;
   thread_actual->pcb = pcb;
@@ -164,7 +162,43 @@ finalizar:
 int
 process_wait (tid_t child_tid UNUSED)
 {
-  return -1;
+  truct thread *thread_actual = thread_current();
+  struct list *datos_pros = &(thread_actual->datos_pros);
+
+  struct process_control_block *child_pcb = NULL;
+  struct list_elem *e;
+  if(!list_empty(datos_pros)){
+    for (e = list_front(datos_pros); e != list_end (&datos_pros); e = list_next (e))
+    {
+      struct process_control_block *pcb = list_entry(e, struct process_control_block, elem);
+      if(pcb->pid == child_tid){
+        child_pcb = pcb;
+        break;
+      }
+    }
+  }
+
+  if(child_pcb == NULL){
+    return -1;
+  }
+
+  if (child_pcb->parent_wait) {
+    return -1;
+  } else {
+    child_pcb->parent_wait = true;
+  }
+  /
+  if(!child_pcb->curr_finish){
+    sema_down(&(child_pcb->tiempo_padre));
+  }
+  ASSERT(child_pcb->curr_finish == true);
+  ASSERT(e != NULL);
+  
+  list_remove(e);
+  int status = child_pcb->exit_code;
+  palloc_free_page(child_pcb);
+
+  return status;
 }
 
 /* Free the current process's resources. */
@@ -174,6 +208,14 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  struct list *file_d_list = &cur->file_d_list;
+  while(!list_empty(file_d_list)){
+    struct list_elem *e = list_pop_front(file_d_list);
+    struct file_d *file_d = list_entry(e, struct file_d, elem);
+    file_close(file_d->file);
+    palloc_free_page(file_d);
+  }
+  
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
