@@ -116,6 +116,19 @@ syscall_handler(struct intr_frame *f UNUSED)
     f->eax = (uint32_t)retorno;
     break;
   }
+    case SYS_REMOVE:
+    {
+      const char* filename;
+      if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+      bool retorno = sys_remove(filename);
+      f->eax = retorno;
+      break;
+    }
   }
 }
 
@@ -254,4 +267,17 @@ static struct file_d *obtener_file_d(int fd)
   }
 
   return NULL;
+}
+
+bool sys_remove(const char *file){
+  if(get_user((const uint8_t*)file) == -1){
+    if (lock_held_by_current_thread(&archivos)){
+      lock_release (&archivos);
+    }
+    sys_exit(-1);
+  }
+  lock_acquire(&archivos);
+  bool retorno = filesys_remove(file);
+  lock_release(&archivos);
+  return retorno;
 }
