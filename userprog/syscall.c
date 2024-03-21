@@ -116,19 +116,67 @@ syscall_handler(struct intr_frame *f UNUSED)
     f->eax = (uint32_t)retorno;
     break;
   }
-    case SYS_REMOVE:
+  case SYS_REMOVE:
+  {
+    const char *filename;
+    if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1)
     {
-      const char* filename;
-      if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1) {
-        if (lock_held_by_current_thread(&archivos)){
-          lock_release (&archivos);
-        }
-        sys_exit(-1);
+      if (lock_held_by_current_thread(&archivos))
+      {
+        lock_release(&archivos);
       }
-      bool retorno = sys_remove(filename);
-      f->eax = retorno;
-      break;
+      sys_exit(-1);
     }
+    bool retorno = sys_remove(filename);
+    f->eax = retorno;
+    break;
+  }
+  case SYS_CREATE:
+  {
+    const char *filename;
+    unsigned initial_size;
+
+    if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1)
+    {
+      if (lock_held_by_current_thread(&archivos))
+      {
+        lock_release(&archivos);
+      }
+      sys_exit(-1);
+    }
+
+    if (get_user_bytes(f->esp + 8, &initial_size, sizeof(initial_size)) == -1)
+    {
+      if (lock_held_by_current_thread(&archivos))
+      {
+        lock_release(&archivos);
+      }
+      sys_exit(-1);
+    }
+
+    bool retorno = sys_create(filename, initial_size);
+    f->eax = retorno;
+
+    break;
+  }
+  case SYS_EXEC:
+  {
+    void *cmd_line;
+
+    int retorno = get_user_bytes(f->esp + 4, &cmd_line, sizeof(cmd_line));
+    if (retorno == -1)
+    {
+      if (lock_held_by_current_thread(&archivos))
+      {
+        lock_release(&archivos);
+      }
+      sys_exit(-1);
+    }
+
+    retorno = sys_exec((const char *)cmd_line);
+    f->eax = (uint32_t)retorno;
+    break;
+  }
   }
 }
 
@@ -269,10 +317,13 @@ static struct file_d *obtener_file_d(int fd)
   return NULL;
 }
 
-bool sys_remove(const char *file){
-  if(get_user((const uint8_t*)file) == -1){
-    if (lock_held_by_current_thread(&archivos)){
-      lock_release (&archivos);
+bool sys_remove(const char *file)
+{
+  if (get_user((const uint8_t *)file) == -1)
+  {
+    if (lock_held_by_current_thread(&archivos))
+    {
+      lock_release(&archivos);
     }
     sys_exit(-1);
   }
@@ -280,4 +331,33 @@ bool sys_remove(const char *file){
   bool retorno = filesys_remove(file);
   lock_release(&archivos);
   return retorno;
+}
+
+bool sys_create(const char *file, unsigned initial_size)
+{
+  if (get_user((const uint8_t *)file) == -1)
+  {
+    if (lock_held_by_current_thread(&archivos))
+    {
+      lock_release(&archivos);
+    }
+    sys_exit(-1);
+  }
+  lock_acquire(&archivos);
+  bool retorno = filesys_create(file, initial_size);
+  lock_release(&archivos);
+  return retorno;
+}
+
+tid_t sys_exec(const char *cmd_line)
+{
+  if (get_user((const uint8_t *)cmd_line) == -1)
+  {
+    sys_exit(-1);
+  }
+  lock_acquire(&archivos);
+  tid_t pid = process_execute(cmd_line);
+  lock_release(&archivos);
+
+  return pid;
 }
