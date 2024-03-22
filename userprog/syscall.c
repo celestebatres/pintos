@@ -57,126 +57,186 @@ syscall_handler(struct intr_frame *f UNUSED)
 
   switch (sys_code)
   {
-  case SYS_HALT:
-  {
-    sys_halt();
-    break;
-  }
-  case SYS_EXIT:
-  {
-    int status;
-
-    if (get_user_bytes(f->esp + 4, &status, sizeof(status)) == -1)
+    case SYS_HALT:
     {
-      if (lock_held_by_current_thread(&archivos))
-      {
-        lock_release(&archivos);
-      }
-      sys_exit(-1);
-    };
-
-    sys_exit(status);
-
-    break;
-  }
-  case SYS_WRITE:
-  {
-    int fd;
-    const void *buffer;
-    unsigned size;
-
-    if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1)
-    {
-      if (lock_held_by_current_thread(&archivos))
-      {
-        lock_release(&archivos);
-      }
-      sys_exit(-1);
+      sys_halt();
+      break;
     }
-
-    if (get_user_bytes(f->esp + 8, &buffer, sizeof(buffer)) == -1)
+    case SYS_EXIT:
     {
-      if (lock_held_by_current_thread(&archivos))
-      {
-        lock_release(&archivos);
-      }
-      sys_exit(-1);
-    }
+      int status;
 
-    if (get_user_bytes(f->esp + 12, &size, sizeof(size)) == -1)
+      if (get_user_bytes(f->esp + 4, &status, sizeof(status)) == -1)
+      {
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
+      };
+
+      sys_exit(status);
+
+      break;
+    }
+    case SYS_WRITE:
     {
-      if (lock_held_by_current_thread(&archivos))
-      {
-        lock_release(&archivos);
-      }
-      sys_exit(-1);
-    }
+      int fd;
+      const void *buffer;
+      unsigned size;
 
-    int retorno = sys_write(fd, buffer, size);
-    f->eax = (uint32_t)retorno;
-    break;
-  }
-  case SYS_REMOVE:
-  {
-    const char *filename;
-    if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1)
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1)
+      {
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      if (get_user_bytes(f->esp + 8, &buffer, sizeof(buffer)) == -1)
+      {
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      if (get_user_bytes(f->esp + 12, &size, sizeof(size)) == -1)
+      {
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      int retorno = sys_write(fd, buffer, size);
+      f->eax = (uint32_t)retorno;
+      break;
+    }
+    case SYS_REMOVE:
     {
-      if (lock_held_by_current_thread(&archivos))
+      const char *filename;
+      if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1)
       {
-        lock_release(&archivos);
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
       }
-      sys_exit(-1);
+      bool retorno = sys_remove(filename);
+      f->eax = retorno;
+      break;
     }
-    bool retorno = sys_remove(filename);
-    f->eax = retorno;
-    break;
-  }
-  case SYS_CREATE:
-  {
-    const char *filename;
-    unsigned initial_size;
-
-    if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1)
+    case SYS_CREATE:
     {
-      if (lock_held_by_current_thread(&archivos))
-      {
-        lock_release(&archivos);
-      }
-      sys_exit(-1);
-    }
+      const char *filename;
+      unsigned initial_size;
 
-    if (get_user_bytes(f->esp + 8, &initial_size, sizeof(initial_size)) == -1)
+      if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1)
+      {
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      if (get_user_bytes(f->esp + 8, &initial_size, sizeof(initial_size)) == -1)
+      {
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      bool retorno = sys_create(filename, initial_size);
+      f->eax = retorno;
+
+      break;
+    }
+    case SYS_EXEC:
     {
-      if (lock_held_by_current_thread(&archivos))
+      void *cmd_line;
+
+      int retorno = get_user_bytes(f->esp + 4, &cmd_line, sizeof(cmd_line));
+      if (retorno == -1)
       {
-        lock_release(&archivos);
+        if (lock_held_by_current_thread(&archivos))
+        {
+          lock_release(&archivos);
+        }
+        sys_exit(-1);
       }
-      sys_exit(-1);
+
+      retorno = sys_exec((const char *)cmd_line);
+      f->eax = (uint32_t)retorno;
+      break;
     }
-
-    bool retorno = sys_create(filename, initial_size);
-    f->eax = retorno;
-
-    break;
-  }
-  case SYS_EXEC:
-  {
-    void *cmd_line;
-
-    int retorno = get_user_bytes(f->esp + 4, &cmd_line, sizeof(cmd_line));
-    if (retorno == -1)
+    case SYS_READ:
     {
-      if (lock_held_by_current_thread(&archivos))
-      {
-        lock_release(&archivos);
-      }
-      sys_exit(-1);
-    }
+      int fd;
+      void* buffer;
+      unsigned size;
 
-    retorno = sys_exec((const char *)cmd_line);
-    f->eax = (uint32_t)retorno;
-    break;
-  }
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      if (get_user_bytes(f->esp + 8, &buffer, sizeof(buffer)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      if (get_user_bytes(f->esp + 12, &size, sizeof(size)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      int retorno = sys_read(fd, buffer, size);
+      f->eax = (uint32_t)retorno;
+      break;
+    }
+    case SYS_WAIT:
+    {
+      tid_t pid;
+      if (get_user_bytes(f->esp + 4, &pid, sizeof(tid_t)) == -1){
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      int retorno = sys_wait(pid);
+      f->eax = retorno;
+      break;
+    }
+    case SYS_OPEN:
+    {
+      const char* filename;
+
+      if (get_user_bytes(f->esp + 4, &filename, sizeof(filename)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      int retorno = sys_open(filename);
+      f->eax = retorno;
+      break;
+    }
   }
 }
 
@@ -360,4 +420,88 @@ tid_t sys_exec(const char *cmd_line)
   lock_release(&archivos);
 
   return pid;
+}
+
+int sys_read(int fd, void *buffer, unsigned size) {
+
+  if (get_user((const uint8_t*) buffer) == -1) {
+    if (lock_held_by_current_thread(&archivos)){
+      lock_release (&archivos);
+    }
+    sys_exit(-1);
+  }
+
+  if (get_user((const uint8_t*) (buffer + size -1)) == -1) {
+    if (lock_held_by_current_thread(&archivos)){
+      lock_release (&archivos);
+    }
+    sys_exit(-1);
+  }
+
+  lock_acquire(&archivos);
+  int retorno = 0;
+  if(fd == 1){
+    retorno -1;
+  } else if(fd == 0) {
+    uint8_t c;
+    unsigned counter = size;
+    uint8_t *buf = buffer;
+    while (counter > 1 && (c = input_getc()) != 0)
+      {
+        *buf = c;
+        buffer++;
+        counter--;
+      }
+    *buf = 0;
+    retorno = size - counter;
+  } else {
+    struct file_d* file_d = obtener_file_d(fd);
+
+    if(file_d && file_d->file) {
+      retorno = file_read(file_d->file, buffer, size);
+    } else {
+      retorno = -1;
+    }
+  }
+  lock_release(&archivos);
+  return retorno;
+}
+
+int sys_wait(tid_t pid){
+  return process_wait(pid);
+}
+
+int sys_open(const char* file) {
+  if (get_user((const uint8_t*)file) == -1) {
+    if (lock_held_by_current_thread(&archivos)){
+      lock_release (&archivos);
+    }
+    sys_exit(-1);
+  }
+  struct file* file_opened;
+  struct file_d* fd = palloc_get_page(0);
+  if(!fd){
+    return -1;
+  }
+
+  lock_acquire(&archivos);
+  file_opened = filesys_open(file);
+  if (!file_opened) {
+    palloc_free_page(fd);
+    lock_release(&archivos);
+    return -1;
+  }
+
+  fd->file = file_opened;
+  struct list* file_d_list = &thread_current()->file_d_list;
+  if (list_empty(file_d_list)) {
+    fd->id = 3;
+  } else {
+    fd->id = (list_entry(list_back(file_d_list), struct file_d, elem)->id) + 1;
+  }
+
+  list_push_back(file_d_list, &(fd->elem));
+
+  lock_release(&archivos);
+  return fd->id;
 }
