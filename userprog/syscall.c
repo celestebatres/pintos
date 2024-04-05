@@ -35,6 +35,12 @@ int sys_wait(tid_t pid);
 
 struct lock archivos;
 
+static bool put_user(uint8_t *udst, uint8_t byte);
+
+void sys_seek(int fd, unsigned position);
+
+unsigned sys_tell(int fd);
+
 void syscall_init(void)
 {
   lock_init(&archivos);
@@ -237,6 +243,73 @@ syscall_handler(struct intr_frame *f UNUSED)
       f->eax = retorno;
       break;
     }
+    case SYS_CLOSE:
+    {
+      int fd;
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+      sys_close(fd);
+      break;
+    }
+    case SYS_FILESIZE:
+    {
+      int fd;
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      int retorno = sys_filesize(fd);
+      f->eax = retorno;
+      break;
+    }
+    case SYS_SEEK:
+    {
+      int fd;
+      unsigned position;
+
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      if (get_user_bytes(f->esp + 8, &position, sizeof(position)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      sys_seek(fd, position);
+      break;
+    }
+    case SYS_TELL:
+    {
+      int fd;
+
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      unsigned retorno = sys_tell(fd);
+      f->eax = (uint32_t)retorno;
+      break;
+    }
+    default:
+      printf("[ERROR] system call %d is unimplemented!\n", sys_code);
+      sys_exit(-1);
+      break;
   }
 }
 
@@ -504,4 +577,68 @@ int sys_open(const char* file) {
 
   lock_release(&archivos);
   return fd->id;
+}
+
+void sys_close(int fd) {
+  lock_acquire(&archivos);
+
+  struct file_d* file_d = obtener_file_d(fd);
+
+  if(file_d && file_d->file) {
+    file_close(file_d->file);
+    list_remove(&(file_d->elem));
+    palloc_free_page(file_d);
+  }
+  lock_release(&archivos);
+}
+
+int sys_filesize(int fd) {
+  struct file_d* file_d;
+
+  if (get_user((const uint8_t*)fd) == -1) {
+    if (lock_held_by_current_thread(&archivos)){
+      lock_release (&archivos);
+    }
+    sys_exit(-1);
+  }
+
+  lock_acquire(&archivos);
+
+  file_d = obtener_file_d(fd);
+
+  if(file_d == NULL) {
+    lock_release(&archivos);
+    return -1;
+  }
+
+  int retorno = file_length(file_d->file);
+
+  lock_release(&archivos);
+
+  return retorno;
+}
+
+void sys_seek (int fd, unsigned position){
+  lock_acquire(&archivos);
+  struct file_d *file_d = obtener_file_d(fd);
+
+  if(file_d && file_d->file){
+    file_seek(file_d->file, position);
+  } else {
+    return;
+  }
+  lock_release(&archivos);
+}
+
+unsigned sys_tell(int fd){
+  lock_acquire(&archivos);
+  struct file_d *file_d = obtener_file_d(fd);
+  int retorno;
+  if(file_d && file_d->file) {
+    retorno = file_tell(file_d->file);
+  } else {
+    retorno = -1;
+  }
+  lock_release(&archivos);
+  return retorno;
 }
