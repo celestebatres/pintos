@@ -5,6 +5,15 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "devices/shutdown.h"
+#include "filesys/filesys.h"
+#include "threads/malloc.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "lib/kernel/list.h"
+#include "threads/synch.h"
+
+typedef int mapid_t;
 
 static void syscall_handler(struct intr_frame *);
 
@@ -41,11 +50,18 @@ void sys_seek(int fd, unsigned position);
 
 unsigned sys_tell(int fd);
 
+static mapid_t mmap (int, void *);
+
+static void  sys_munmap (mapid_t mapid);
+
 void syscall_init(void)
 {
   lock_init(&archivos);
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
+
+
+static mapid_t allocate_mapid (void);
 
 static void
 syscall_handler(struct intr_frame *f UNUSED)
@@ -306,6 +322,29 @@ syscall_handler(struct intr_frame *f UNUSED)
       f->eax = (uint32_t)retorno;
       break;
     }
+    case SYS_MMAP:
+    {
+      int fd;
+      void *addr;
+
+      if (get_user_bytes(f->esp + 4, &fd, sizeof(fd)) == -1) {
+        if (lock_held_by_current_thread(&archivos)){
+          lock_release (&archivos);
+        }
+        sys_exit(-1);
+      }
+
+      int retorno = sys_filesize(fd);
+      f->eax = mmap (fd, addr);
+      break;
+    }
+    /*case SYS_MUNMAP:
+    {
+      mapid_t mid;
+      memread_user(f->esp + 4, &mid, sizeof(mid));
+
+      sys_munmap(mid);
+    }*/
     default:
       printf("[ERROR] system call %d is unimplemented!\n", sys_code);
       sys_exit(-1);
@@ -603,6 +642,7 @@ int sys_filesize(int fd) {
   }
 
   lock_acquire(&archivos);
+  printf;
 
   file_d = obtener_file_d(fd);
 
@@ -633,6 +673,7 @@ void sys_seek (int fd, unsigned position){
 unsigned sys_tell(int fd){
   lock_acquire(&archivos);
   struct file_d *file_d = obtener_file_d(fd);
+  printf("Dirección del puntero al stack: %p\n", &file_d);
   int retorno;
   if(file_d && file_d->file) {
     retorno = file_tell(file_d->file);
@@ -641,4 +682,79 @@ unsigned sys_tell(int fd){
   }
   lock_release(&archivos);
   return retorno;
+}
+
+mapid_t mmap(int fd, void *addr) {
+    struct thread *t = thread_current();
+    struct file_d *file_d = obtener_file_d(fd);
+
+    if (addr == NULL || pg_ofs(addr) != 0 || fd == 0 || fd == 1 || fd == STDIN_FILENO || fd == STDOUT_FILENO || file_d == NULL)
+        return -1;
+
+    size_t file_size = file_length(file_d->file);
+    if (file_size <= 0)
+        return -1;
+
+    lock_acquire(&archivos);
+    struct file *file = file_reopen(file_d->file);
+    lock_release(&archivos);
+    if (file == NULL)
+        return -1;
+
+    size_t ofs = 0;
+    while (file_size > 0) {
+        size_t read_bytes = file_size < PGSIZE ? file_size : PGSIZE;
+        size_t zero_bytes = PGSIZE - read_bytes;
+
+        if (vm_find_page(addr) != NULL)
+            return -1;
+
+        vm_new_file_page(addr, file, ofs, read_bytes, zero_bytes, true, -1);
+
+        ofs += PGSIZE;
+        file_size -= read_bytes;
+        addr += PGSIZE;
+    }
+
+    mapid_t map_id = allocate_mapid();
+    if (map_id == -1) {
+        file_close(file);
+        return -1;
+    }
+
+    vm_insert_mfile(map_id, fd, addr - ofs, addr);
+
+    return map_id;
+}
+
+void sys_munmap(mapid_t mid) {
+    struct thread *t = thread_current();
+    struct mmap_desc *mmap_d = find_mmap_desc(t, mid);
+
+    if (mmap_d == NULL) { // No se encontró el descriptor de mmap
+        return; // Terminar la ejecución sin hacer nada
+    }
+
+    lock_acquire(&archivos);
+    {
+        // Iterar sobre cada página y desmapearla
+        size_t offset, file_size = mmap_d->size;
+        for (offset = 0; offset < file_size; offset += PGSIZE) {
+            void *addr = mmap_d->addr + offset;
+            size_t bytes = (offset + PGSIZE < file_size ? PGSIZE : file_size - offset);
+        }
+
+        // Liberar recursos y eliminar de la lista
+        list_remove(&mmap_d->elem);
+        file_close(mmap_d->file);
+        free(mmap_d);
+    }
+    lock_release(&archivos);
+}
+
+
+static mapid_t allocate_mapid (void)
+{
+  static mapid_t next_mapid = 0;
+  return next_mapid++;
 }
